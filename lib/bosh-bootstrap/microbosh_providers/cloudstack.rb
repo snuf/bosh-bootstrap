@@ -64,10 +64,13 @@ module Bosh::Bootstrap::MicroboshProviders
     end
 
     def cloud_properties
-      {"access_key_id"=>settings.provider.credentials.cloudstack_access_key,
-       "secret_access_key"=>settings.provider.credentials.cloudstack_secret_key,
-       "zone"=>settings.provider.zone,
-       "auth_url"=>settings.provider.credentials.cloudstack_auth_url}
+      {"cloudstack_api_key"=>settings.provider.credentials.cloudstack_api_key,
+       "cloudstack_secret_access_key"=>settings.provider.credentials.cloudstack_secret_access_key,
+       "cloudstack_scheme"=>settings.provider.credentials.cloudstack_scheme,
+       "cloudstack_host"=>settings.provider.credentials.cloudstack_host,
+       "cloudstack_port"=>settings.provider.credentials.cloudstack_port,
+       "cloudstack_path"=>settings.provider.credentials.cloudstack_path
+      }
     end
 
     def security_groups
@@ -86,20 +89,17 @@ module Bosh::Bootstrap::MicroboshProviders
       settings.provider.zone
     end
 
-    # @return Bosh::Cli::PublicStemcell latest stemcell for cloudstack/trusty
-    # If us-east-1 region, then return light stemcell
+    # @return Bosh::Cli::PublicStemcell latest stemcell for cloudstack/vivid
     def latest_stemcell
       @latest_stemcell ||= begin
         trusty_stemcells = recent_stemcells.select do |s|
-            s.name =~ /cloudstack/ && s.name =~ /trusty/ && s.name =~ /^light/
+            s.name =~ /openstack/ && s.name =~ /trusty/
+        end
+        if trusty_stemcells.empty?
+          raise "no stemcell found that matches trusty and openstack"
         end
         trusty_stemcells.sort {|s1, s2| s2.version <=> s1.version}.first
       end
-    end
-
-    # only us-east-1 has light stemcells published
-    def light_stemcell?
-      cloudstack_region == "us-east-1"
     end
 
     def vpc?
@@ -135,17 +135,16 @@ module Bosh::Bootstrap::MicroboshProviders
     # "virtualizationType"=>"paravirtual",
     # "hypervisor"=>"xen"}
     def owned_templates
-      my_templates_raw = fog_compute.describe_templates('Owner' => 'self')
-      my_templates_raw.body["imagesSet"]
+      my_templates_raw = fog_compute.list_templates('templatefilter' => 'self')["listtemplatesresponse"]["template"]
     end
 
     # @return [String] Any AMI imageID, e.g. "ami-c19ed3f1" for given BOSH stemcell name/version
     # Usage: find_ami_for_stemcell("bosh-cloudstack-xen-ubuntu-trusty-go_agent", "2732")
     def find_template_for_stemcell(name, version)
       image = owned_templates.find do |image|
-        image["description"] == "#{name} #{version}"
+        image["displaytext"] == "#{name} #{version}"
       end
-      image["imageId"] if image
+      image["id"] if image
     end
 
     def discover_if_stemcell_image_already_uploaded
